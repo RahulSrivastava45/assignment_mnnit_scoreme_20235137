@@ -1,0 +1,8 @@
+{
+  "claim_id": "CLM-1001",
+  "policy_number": "POL-1001",
+  "claim_type": "medical",
+  "claim_amount": 12000,
+  "incident_date": "2025-06-01",
+  "documents_attached": true
+}
