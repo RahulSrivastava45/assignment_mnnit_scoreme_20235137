@@ -46,6 +46,7 @@
       "max_attempts": 3,
       "backoff_seconds": 0.2,
       "on_success": "affordability",
+      "on_failure": "manual_review",
       "on_exhausted": "retry_later"
     },
     "affordability": {

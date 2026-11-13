@@ -77,15 +77,13 @@ class WorkflowDefinition:
                 target(sname, "default", stage["default"])
 
             elif stype == "dependency":
-                for key in ("service", "on_success"):
+                for key in ("service", "on_success", "on_failure"):
                     if key not in stage:
                         raise ConfigError(f"{self.name}.{sname}: missing '{key}'")
                 target(sname, "on_success", stage["on_success"])
-                if stage.get("on_exhausted") != "retry_later":
-                    if "on_failure" not in stage:
-                        raise ConfigError(
-                            f"{self.name}.{sname}: needs on_failure or on_exhausted='retry_later'")
-                    target(sname, "on_failure", stage["on_failure"])
+                target(sname, "on_failure", stage["on_failure"])
+                if stage.get("on_exhausted", "on_failure") not in ("retry_later", "on_failure"):
+                    raise ConfigError(f"{self.name}.{sname}: on_exhausted must be 'retry_later' or 'on_failure'")
 
             elif stype == "terminal":
                 if stage.get("status") not in TERMINAL_STAGE_STATUSES:

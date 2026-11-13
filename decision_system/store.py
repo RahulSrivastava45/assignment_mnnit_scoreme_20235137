@@ -112,9 +112,10 @@ class Store:
         for event in events:
             event = dict(event)
             name = event.pop("event")
+            event_stage = event.pop("stage", stage)  # events carry the stage that produced them
             self._conn.execute(
                 "INSERT INTO audit (request_id, seq, at, stage, event, detail) VALUES (?,?,?,?,?,?)",
-                (request_id, seq, ts, stage, name, json.dumps(event)),
+                (request_id, seq, ts, event_stage, name, json.dumps(event)),
             )
             seq += 1
 
