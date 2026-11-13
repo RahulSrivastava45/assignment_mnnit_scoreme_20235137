@@ -1,0 +1,85 @@
+{
+  "name": "loan_application",
+  "version": 1,
+  "schema": {
+    "fields": {
+      "applicant_id": {"type": "string", "required": true, "min_length": 3},
+      "full_name": {"type": "string", "required": true, "min_length": 2},
+      "age": {"type": "integer", "required": true, "min": 0, "max": 120},
+      "annual_income": {"type": "number", "required": true, "min": 0},
+      "loan_amount": {"type": "number", "required": true, "min": 1},
+      "employment_status": {
+        "type": "string",
+        "required": true,
+        "enum": ["employed", "self_employed", "unemployed", "student"]
+      }
+    }
+  },
+  "start": "mandatory_checks",
+  "stages": {
+    "mandatory_checks": {
+      "type": "rules",
+      "rules": [
+        {
+          "id": "MIN_AGE",
+          "description": "Applicant must be at least 18",
+          "when": {"field": "data.age", "op": "<", "value": 18},
+          "goto": "rejected"
+        },
+        {
+          "id": "NO_INCOME",
+          "description": "Unemployed applicants with income under 10000 are not eligible",
+          "when": {"all": [
+            {"field": "data.employment_status", "op": "==", "value": "unemployed"},
+            {"field": "data.annual_income", "op": "<", "value": 10000}
+          ]},
+          "goto": "rejected"
+        }
+      ],
+      "default": "credit_check"
+    },
+    "credit_check": {
+      "type": "dependency",
+      "service": "credit_bureau",
+      "input": {"applicant_id": "data.applicant_id"},
+      "store_as": "credit",
+      "max_attempts": 3,
+      "backoff_seconds": 0.2,
+      "on_success": "affordability",
+      "on_exhausted": "retry_later"
+    },
+    "affordability": {
+      "type": "rules",
+      "rules": [
+        {
+          "id": "LOW_CREDIT",
+          "description": "Credit score below 550 is rejected",
+          "when": {"field": "credit.score", "op": "<", "value": 550},
+          "goto": "rejected"
+        },
+        {
+          "id": "LOAN_TO_INCOME",
+          "description": "Loan may not exceed 5x annual income",
+          "when": {"field": "data.loan_amount", "op": ">", "value": {"ref": "data.annual_income", "multiply": 5}},
+          "goto": "rejected"
+        },
+        {
+          "id": "BORDERLINE_CREDIT",
+          "description": "Credit score between 550 and 649 needs a human look",
+          "when": {"field": "credit.score", "op": "<", "value": 650},
+          "goto": "manual_review"
+        },
+        {
+          "id": "LARGE_LOAN",
+          "description": "Loans above 1,000,000 always need manual review",
+          "when": {"field": "data.loan_amount", "op": ">", "value": 1000000},
+          "goto": "manual_review"
+        }
+      ],
+      "default": "approved"
+    },
+    "approved": {"type": "terminal", "status": "APPROVED"},
+    "rejected": {"type": "terminal", "status": "REJECTED"},
+    "manual_review": {"type": "terminal", "status": "MANUAL_REVIEW"}
+  }
+}

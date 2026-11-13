@@ -1,0 +1,66 @@
+{
+  "name": "claim_processing",
+  "version": 1,
+  "schema": {
+    "fields": {
+      "claim_id": {"type": "string", "required": true, "min_length": 3},
+      "policy_number": {"type": "string", "required": true, "min_length": 3},
+      "claim_type": {"type": "string", "required": true, "enum": ["medical", "auto", "property"]},
+      "claim_amount": {"type": "number", "required": true, "min": 1},
+      "incident_date": {"type": "date", "required": true},
+      "documents_attached": {"type": "boolean", "required": true}
+    }
+  },
+  "start": "completeness",
+  "stages": {
+    "completeness": {
+      "type": "rules",
+      "rules": [
+        {
+          "id": "DOCS_MISSING",
+          "description": "Claims without supporting documents are sent to a reviewer",
+          "when": {"field": "data.documents_attached", "op": "==", "value": false},
+          "goto": "manual_review"
+        }
+      ],
+      "default": "policy_lookup"
+    },
+    "policy_lookup": {
+      "type": "dependency",
+      "service": "policy_service",
+      "input": {"policy_number": "data.policy_number"},
+      "store_as": "policy",
+      "max_attempts": 2,
+      "backoff_seconds": 0.1,
+      "on_success": "coverage",
+      "on_failure": "manual_review"
+    },
+    "coverage": {
+      "type": "rules",
+      "rules": [
+        {
+          "id": "POLICY_INACTIVE",
+          "description": "Policy must be active",
+          "when": {"field": "policy.active", "op": "==", "value": false},
+          "goto": "rejected"
+        },
+        {
+          "id": "OVER_LIMIT",
+          "description": "Claim exceeds the coverage limit of the policy",
+          "when": {"field": "data.claim_amount", "op": ">", "value": {"ref": "policy.coverage_limit"}},
+          "goto": "rejected"
+        },
+        {
+          "id": "HIGH_VALUE",
+          "description": "Claims above 50000 need a human decision",
+          "when": {"field": "data.claim_amount", "op": ">", "value": 50000},
+          "goto": "manual_review"
+        }
+      ],
+      "default": "approved"
+    },
+    "approved": {"type": "terminal", "status": "APPROVED"},
+    "rejected": {"type": "terminal", "status": "REJECTED"},
+    "manual_review": {"type": "terminal", "status": "MANUAL_REVIEW"}
+  }
+}
