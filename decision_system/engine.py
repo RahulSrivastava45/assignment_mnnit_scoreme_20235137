@@ -117,13 +117,15 @@ class DecisionEngine:
         record = self._require(request_id)
         audit = self.store.audit(request_id)
 
-        rule_trace, dependency_calls, decision = [], [], None
+        timeline, rule_trace, dependency_calls, decision = [], [], [], None
         for item in audit:
-            d = dict(item["detail"], stage=item["stage"])
+            d = dict(item["detail"], stage=item["stage"], event=item["event"])
             if item["event"] in ("rule_evaluated", "default_applied"):
-                rule_trace.append(dict(d, event=item["event"]))
+                rule_trace.append(d)
+                timeline.append(d)
             elif item["event"] == "dependency_call":
                 dependency_calls.append(d)
+                timeline.append(d)
             elif item["event"] == "decision":
                 decision = d
 
@@ -137,7 +139,7 @@ class DecisionEngine:
             "reasons": decision["reasons"] if decision else [],
             "rule_trace": rule_trace,
             "dependency_calls": dependency_calls,
-            "summary": self._summary(record, rule_trace, dependency_calls, decision),
+            "summary": self._summary(record, timeline, decision),
         }
 
     # -- internals --------------------------------------------------------
@@ -289,24 +291,24 @@ class DecisionEngine:
             return f"{c['field']} is missing -> False"
         return f"{c['field']}={c['actual']!r} {c['op']} {c['expected']!r} -> {c['result']}"
 
-    def _summary(self, record, rule_trace, dependency_calls, decision):
+    def _summary(self, record, timeline, decision):
         lines = [f"Request {record['id']} ({record['workflow']} v{record['workflow_version']}) "
                  f"is {record['status']}."]
         lines.append(f"Input: {json.dumps(record['payload'], sort_keys=True)}")
-        for call in dependency_calls:
-            if call["outcome"] == "success":
-                lines.append(f"[{call['stage']}] {call['service']} attempt {call['attempt']}: "
-                             f"ok -> {json.dumps(call['response'], sort_keys=True)}")
-            else:
-                lines.append(f"[{call['stage']}] {call['service']} attempt {call['attempt']}: "
-                             f"{call['outcome']} ({call['error']})")
-        for step in rule_trace:
-            if step["event"] == "default_applied":
+        for step in timeline:
+            if step["event"] == "dependency_call":
+                if step["outcome"] == "success":
+                    lines.append(f"[{step['stage']}] {step['service']} attempt {step['attempt']}: "
+                                 f"ok -> {json.dumps(step['response'], sort_keys=True)}")
+                else:
+                    lines.append(f"[{step['stage']}] {step['service']} attempt {step['attempt']}: "
+                                 f"{step['outcome']} ({step['error']})")
+            elif step["event"] == "default_applied":
                 lines.append(f"[{step['stage']}] no rule matched, default -> {step['goto']}")
-                continue
-            verdict = "MATCHED" if step["matched"] else "not matched"
-            checks = "; ".join(self._fmt_cond(c) for c in step["conditions"])
-            lines.append(f"[{step['stage']}] {step['rule']} {verdict} - {step['description']} ({checks})")
+            else:
+                verdict = "MATCHED" if step["matched"] else "not matched"
+                checks = "; ".join(self._fmt_cond(c) for c in step["conditions"])
+                lines.append(f"[{step['stage']}] {step['rule']} {verdict} - {step['description']} ({checks})")
         if decision:
             lines.append(f"Decision: {decision['outcome']}")
             for reason in decision["reasons"]:
